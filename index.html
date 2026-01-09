@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NgocAnh - Special Birthday Background</title>
+    <style>
+        body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+        canvas { display: block; filter: contrast(120%) brightness(110%); }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+let width, height;
+let particles = [];
+let fireworks = [];
+let rockets = [];
+let matrixDrops = [];
+let matrixColors = [];
+let stars = []; 
+let isFireworkStage = false;
+let msgIndex = 0;
+const messages = ["3", "2", "1", "HAPPY", "BIRTH DAY", "NgocAnh"];
+
+// Chữ chạy nền mới
+const matrixChars = "HAPPY BIRTHDAY NGOC ANH ".split("");
+
+const CONFIG = {
+    particleSize: 4,
+    gap: 7,               // Giảm gap để chữ hạt mịn hơn nữa
+    snapSpeed: 0.1,       // Tăng tốc độ tụ hạt cho mượt
+    matrixFontSize: 18,   // Kích thước chữ nền
+    fireworkDuration: 12000 
+};
+
+function init() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    
+    // Tăng mật độ cột Matrix (giảm khoảng cách giữa các cột)
+    const columns = Math.floor(width / (CONFIG.matrixFontSize * 0.8));
+    matrixDrops = Array(columns).fill(1);
+    // Màu sắc tươi sáng hơn cho nền
+    matrixColors = Array(columns).fill(0).map(() => `hsl(${Math.random() * 360}, 100%, 60%)`);
+    
+    stars = [];
+    for(let i=0; i<150; i++) {
+        stars.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            size: Math.random() * 2,
+            opacity: Math.random(),
+            speed: Math.random() * 0.03
+        });
+    }
+}
+
+window.addEventListener('resize', init);
+init();
+
+function drawGlowParticle(x, y, size, color, opacity = 1) {
+    ctx.globalAlpha = opacity;
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, size * 2);
+    gradient.addColorStop(0, 'white');
+    gradient.addColorStop(0.3, color);
+    gradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, size * 2, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function createParticles(text) {
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d');
+    offCanvas.width = width;
+    offCanvas.height = height;
+    const fontSize = Math.min(width / (text.length > 2 ? 6 : 3), height / 3);
+    offCtx.font = `bold ${fontSize}px Arial`;
+    offCtx.fillStyle = "white";
+    offCtx.textAlign = "center";
+    offCtx.textBaseline = "middle";
+    offCtx.fillText(text, width / 2, height / 2);
+
+    const data = offCtx.getImageData(0, 0, width, height).data;
+    let newTargets = [];
+    for (let y = 0; y < height; y += CONFIG.gap) {
+        for (let x = 0; x < width; x += CONFIG.gap) {
+            if (data[(y * width + x) * 4 + 3] > 128) {
+                newTargets.push({ x, y });
+            }
+        }
+    }
+
+    if (particles.length < newTargets.length) {
+        for (let i = particles.length; i < newTargets.length; i++) {
+            particles.push({
+                currX: Math.random() * width,
+                currY: Math.random() * height,
+                targetX: 0,
+                targetY: 0
+            });
+        }
+    } else if (particles.length > newTargets.length) {
+        particles.splice(newTargets.length);
+    }
+
+    newTargets.forEach((t, i) => {
+        particles[i].targetX = t.x;
+        particles[i].targetY = t.y;
+    });
+}
+
+function runFlow() {
+    if (msgIndex < messages.length) {
+        isFireworkStage = false;
+        createParticles(messages[msgIndex]);
+        msgIndex++;
+        const delay = messages[msgIndex-1].length < 2 ? 1000 : 2500;
+        setTimeout(runFlow, delay);
+    } else {
+        isFireworkStage = true;
+        setTimeout(() => {
+            msgIndex = 0;
+            rockets = [];
+            runFlow();
+        }, CONFIG.fireworkDuration);
+    }
+}
+
+// Logic pháo hoa giữ nguyên từ bản trước để đảm bảo ổn định
+class Rocket {
+    constructor(type, isDeep = false) {
+        this.type = type;
+        this.isDeep = isDeep;
+        this.x = Math.random() * width;
+        this.y = height;
+        this.targetY = isDeep ? Math.random() * height * 0.5 : height * 0.1 + Math.random() * (height * 0.4);
+        this.vy = isDeep ? -(Math.random() * 2 + 4) : -(Math.random() * 4 + 8);
+        this.color = `hsl(${Math.random() * 360}, 100%, 70%)`;
+    }
+    update() {
+        this.y += this.vy;
+        this.vy += 0.1;
+        if (this.vy >= 0 || this.y <= this.targetY) {
+            this.explode();
+            return false;
+        }
+        return true;
+    }
+    draw() {
+        drawGlowParticle(this.x, this.y, this.isDeep ? 1 : 2, 'white', this.isDeep ? 0.3 : 0.8);
+    }
+    explode() {
+        const count = this.isDeep ? 25 : 55;
+        if (this.type === 'heart') createHeartExplosion(this.x, this.y);
+        else if (this.type === 'name') createNameExplosion(this.x, this.y);
+        else {
+            for (let i = 0; i < count; i++) {
+                const ang = Math.random() * Math.PI * 2;
+                const spd = Math.random() * (this.isDeep ? 3 : 6);
+                fireworks.push(new Spark(this.x, this.y, Math.cos(ang)*spd, Math.sin(ang)*spd, this.color, this.isDeep));
+            }
+        }
+    }
+}
+
+class Spark {
+    constructor(x, y, vx, vy, color, isDeep = false) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.color = color; this.alpha = 1;
+        this.isDeep = isDeep;
+        this.size = isDeep ? Math.random() * 1 : Math.random() * 2.5;
+    }
+    update() {
+        this.vx *= 0.96; this.vy *= 0.96; this.vy += 0.05;
+        this.x += this.vx; this.y += this.vy;
+        this.alpha -= this.isDeep ? 0.02 : 0.015;
+    }
+    draw() {
+        drawGlowParticle(this.x, this.y, this.size, this.color, this.alpha * (this.isDeep ? 0.5 : 1));
+    }
+}
+
+function createHeartExplosion(x, y) {
+    for (let i = 0; i < 80; i++) {
+        const a = (i / 40) * Math.PI;
+        const vx = 16 * Math.pow(Math.sin(a), 3) * 0.25;
+        const vy = -(13 * Math.cos(a) - 5 * Math.cos(2*a) - 2 * Math.cos(3*a) - Math.cos(4*a)) * 0.25;
+        fireworks.push(new Spark(x, y, vx, vy, "#ff3366"));
+    }
+}
+
+function createNameExplosion(x, y) {
+    const off = document.createElement('canvas');
+    off.width = width; off.height = height;
+    const octx = off.getContext('2d');
+    octx.font = "bold 50px Arial";
+    octx.fillStyle = "white";
+    octx.textAlign = "center";
+    octx.fillText("NgocAnh", width/2, height/2);
+    const idat = octx.getImageData(0,0,width,height).data;
+    for(let i=0; i<height; i+=5) {
+        for(let j=0; j<width; j+=5) {
+            if(idat[(i*width+j)*4+3]>128) {
+                fireworks.push(new Spark(x+(j-width/2)*0.5, y+(i-height/2)*0.5, 0, 0, "#00ffff"));
+            }
+        }
+    }
+}
+
+function animate() {
+    // Giảm độ mờ của lớp phủ đen để chữ nền và pháo hoa để lại trail rõ hơn
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.18)"; 
+    ctx.fillRect(0, 0, width, height);
+
+    // 1. Stars Background
+    stars.forEach(s => {
+        s.opacity += s.speed;
+        if(s.opacity > 1 || s.opacity < 0) s.speed = -s.speed;
+        ctx.fillStyle = `rgba(255, 255, 255, ${s.opacity * 0.4})`;
+        ctx.fillRect(s.x, s.y, s.size, s.size);
+    });
+
+    // 2. Matrix Background - HAPPY BIRTHDAY VERSION
+    ctx.font = `bold ${CONFIG.matrixFontSize}px Arial`;
+    for (let i = 0; i < matrixDrops.length; i++) {
+        // Lấy ký tự ngẫu nhiên trong cụm từ HAPPY BIRTHDAY
+        const text = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+        ctx.fillStyle = matrixColors[i % matrixColors.length];
+        
+        // Độ rõ nét của nền tùy giai đoạn
+        ctx.globalAlpha = isFireworkStage ? 0.2 : 0.6; 
+        
+        ctx.fillText(text, i * CONFIG.matrixFontSize * 0.85, matrixDrops[i] * CONFIG.matrixFontSize);
+        
+        if (matrixDrops[i] * CONFIG.matrixFontSize > height && Math.random() > 0.975) {
+            matrixDrops[i] = 0;
+        }
+        matrixDrops[i]++;
+    }
+
+    // 3. Chữ hạt (Main Countdown/Message)
+    if (!isFireworkStage) {
+        particles.forEach(p => {
+            p.currX += (p.targetX - p.currX) * CONFIG.snapSpeed;
+            p.currY += (p.targetY - p.currY) * CONFIG.snapSpeed;
+            drawGlowParticle(p.currX, p.currY, CONFIG.particleSize, '#ffffff', 1);
+        });
+    }
+
+    // 4. Pháo hoa
+    if (isFireworkStage) {
+        if (Math.random() < 0.08) {
+            let t = 'normal'; 
+            const r = Math.random();
+            if(r > 0.6) t = 'heart'; 
+            if(r > 0.92) t = 'name';
+            rockets.push(new Rocket(t, false));
+        }
+        if (Math.random() < 0.12) rockets.push(new Rocket('normal', true));
+
+        rockets = rockets.filter(r => r.update());
+        rockets.forEach(r => r.draw());
+    }
+
+    fireworks = fireworks.filter(s => s.alpha > 0);
+    fireworks.forEach(s => { s.update(); s.draw(); });
+
+    requestAnimationFrame(animate);
+}
+
+runFlow();
+animate();
+</script>
+</body>
+</html>
